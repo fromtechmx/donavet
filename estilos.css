@@ -1,0 +1,48 @@
+:root { --fondo:#f6f7f9; --tarjeta:#fff; --texto:#1d2733; --suave:#5b6877; --linea:#dfe3e8; --marca:#0f6b6b; --marca-fondo:#e3f1f1; --hembra:#d6457f; --hembra-fondo:#fdeaf2; --macho:#2f6fd1; --macho-fondo:#e8f0fc; --error:#b3261e; --ok:#1b7a3d; }
+@media (prefers-color-scheme: dark) { :root { --fondo:#12161b; --tarjeta:#1b2129; --texto:#e8ecf1; --suave:#9aa6b5; --linea:#2e3743; --marca:#4cc2c2; --marca-fondo:#16302f; --hembra:#ff7fb0; --hembra-fondo:#3a1c2a; --macho:#7aa8ff; --macho-fondo:#1b2a45; --error:#ff8a80; --ok:#6fd08c; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--fondo); color:var(--texto); font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+.cargando { padding:40px 16px; color:var(--suave); text-align:center; }
+header.barra { display:flex; gap:12px; align-items:center; justify-content:space-between; padding:10px 16px; background:var(--tarjeta); border-bottom:1px solid var(--linea); position:sticky; top:0; z-index:5; }
+header.barra a.marca { font-weight:700; color:var(--marca); text-decoration:none; font-size:18px; }
+header.barra .quien { color:var(--suave); font-size:14px; display:flex; gap:10px; align-items:center; }
+main { max-width:1000px; margin:0 auto; padding:16px; }
+h1 { font-size:22px; margin:8px 0 12px; } h2 { font-size:18px; margin:20px 0 8px; } h3 { font-size:16px; margin:0 0 4px; }
+.tarjeta { background:var(--tarjeta); border:1px solid var(--linea); border-radius:12px; padding:14px; margin-bottom:12px; }
+input, select, textarea, button { font:inherit; color:inherit; }
+input, select, textarea { width:100%; padding:10px 12px; border:1px solid var(--linea); border-radius:10px; background:var(--tarjeta); }
+textarea { min-height:70px; resize:vertical; }
+label { display:block; font-size:14px; color:var(--suave); margin:10px 0 4px; }
+button { cursor:pointer; padding:10px 16px; border-radius:10px; border:1px solid var(--linea); background:var(--tarjeta); }
+button.principal { background:var(--marca); border-color:var(--marca); color:#fff; font-weight:600; }
+button:disabled { opacity:.55; cursor:default; }
+button.enlace { border:0; background:none; color:var(--marca); padding:4px 8px; }
+.fila { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.fila > .crece { flex:1 1 220px; }
+.mensaje { padding:10px 12px; border-radius:10px; margin:10px 0; }
+.mensaje.error { background:#fdecea; color:var(--error); border:1px solid var(--error); }
+.mensaje.ok { background:#e7f5ec; color:var(--ok); border:1px solid var(--ok); }
+@media (prefers-color-scheme: dark) { .mensaje.error { background:#3b1a17; } .mensaje.ok { background:#16301f; } }
+.lista { list-style:none; padding:0; margin:0; }
+.lista li { border-bottom:1px solid var(--linea); }
+.lista li:last-child { border-bottom:0; }
+.lista a { display:block; padding:12px 6px; color:inherit; text-decoration:none; }
+.lista a:hover { background:var(--marca-fondo); }
+.sub { color:var(--suave); font-size:14px; }
+.etiqueta { display:inline-block; font-size:12px; padding:2px 8px; border-radius:99px; background:var(--marca-fondo); color:var(--marca); margin-right:4px; }
+.rejilla { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
+.mascota { display:block; text-decoration:none; color:inherit; border:2px solid var(--linea); border-top-width:7px; border-radius:12px; padding:10px 12px; background:var(--tarjeta); }
+.mascota.hembra { border-color:var(--hembra); background:var(--hembra-fondo); }
+.mascota.macho { border-color:var(--macho); background:var(--macho-fondo); }
+.mascota.activa { outline:3px solid var(--marca); }
+.sexo { font-weight:700; } .sexo.hembra { color:var(--hembra); } .sexo.macho { color:var(--macho); }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--linea); vertical-align:top; }
+th { color:var(--suave); font-weight:600; }
+td.num, th.num { text-align:right; white-space:nowrap; }
+.tabla-scroll { overflow-x:auto; }
+.login { max-width:380px; margin:12vh auto 0; }
+.paso { border-left:4px solid var(--marca); }
+.paso .meta { font-size:13px; color:var(--suave); margin-bottom:6px; }
+.dos { display:grid; grid-template-columns:1fr 1fr; gap:10px; } @media (max-width:560px) { .dos { grid-template-columns:1fr; } }
+a { color: var(--marca); }
