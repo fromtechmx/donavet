@@ -1,0 +1,193 @@
+/* Dona Vet&Care · Recepción — adaptador Supabase.
+ * La pantalla (index.html) es la MISMA de Apps Script. Solo cambió cómo pide los datos: antes llamaba a google.script.run.api_xxx(clave, …);
+ * ahora esas mismas llamadas llegan aquí y se convierten en funciones de la base (rpc) con los mismos nombres de campos en la respuesta.
+ * Todo lo que calcula (cuentas, saldos, validaciones, historial) vive en la base; este archivo solo traduce y ordena. */
+(function () {
+  'use strict';
+  var cfg = window.DONAVET_CONFIG;
+  var sb = window.supabase.createClient(cfg.url, cfg.key, { auth: { persistSession: true, autoRefreshToken: true } });
+  var DV = window.DV = { sb: sb, correo: '' };
+  var ESQUEMA = {"ok": true, "pasos": [{"id": "ingreso", "titulo": "Ingreso a consulta", "secciones": [{"id": "problemas", "titulo": "Problemas más comunes", "campos": [{"k": "motivo_problemas", "w": 1, "e": "Toca los que apliquen", "t": "marcas", "o": ["Vómito", "Diarrea", "No quiere comer", "Decaimiento", "Tos", "Estornudos", "Secreción nasal", "Comezón / rascado", "Caída de pelo", "Problemas de oído", "Secreción en ojos", "Cojera", "Heridas / mordidas", "Fiebre", "Pérdida de peso", "Dificultad para orinar", "Sangre en orina", "Convulsiones", "Pulgas / garrapatas", "Revisión general"]}]}, {"id": "motivo", "titulo": "Motivo de consulta", "campos": [{"k": "motivo_que", "w": 1, "e": "¿Qué le pasa a la mascota?", "t": "largo"}, {"k": "motivo_desde", "w": 1, "e": "¿Desde cuándo?", "t": "texto"}, {"k": "motivo_tanto", "w": 1, "e": "¿Qué tanto le afecta?", "t": "largo"}, {"k": "motivo_como", "w": 1, "e": "¿Cómo se ha presentado?", "t": "largo"}]}, {"id": "vac_canino", "titulo": "Vacunación (canino)", "grupo": "historia", "solo": "Canino", "campos": [{"k": "vac_distemper", "e": "Distemper", "t": "sino"}, {"k": "vac_parvovirus", "e": "Parvovirus", "t": "sino"}, {"k": "vac_adenovirus2", "e": "Adenovirus tipo 2", "t": "sino"}, {"k": "vac_parainfluenza", "e": "Parainfluenza", "t": "sino"}, {"k": "vac_leptospira", "e": "Leptospira", "t": "sino"}, {"k": "vac_coronavirus", "e": "Coronavirus", "t": "sino"}, {"k": "vac_rabia", "e": "Rabia", "t": "sino"}, {"k": "vac_bordetella", "e": "Bordetella", "t": "sino"}]}, {"id": "vac_felino", "titulo": "Vacunación (felino)", "grupo": "historia", "solo": "Felino", "campos": [{"k": "vac_leucemia", "e": "Leucemia felina", "t": "sino"}, {"k": "vac_triple_felina", "e": "Triple felina", "t": "sino"}]}, {"id": "habitos", "titulo": "Hábitos", "grupo": "historia", "campos": [{"k": "hab_habitat", "e": "Hábitat (dónde vive)", "t": "texto"}, {"k": "hab_caza", "e": "¿Caza?", "t": "sino"}, {"k": "hab_calle", "e": "¿Sale a la calle?", "t": "sino"}, {"k": "hab_convive", "e": "Convive con otras mascotas (cuáles)", "t": "texto"}]}, {"id": "alimentacion", "titulo": "Alimentación", "grupo": "historia", "campos": [{"k": "ali_croqueta", "e": "Croqueta (marca)", "t": "texto"}, {"k": "ali_comida", "e": "Comida casera", "t": "sino"}, {"k": "ali_comida_obs", "w": 1, "si": "ali_comida", "e": "Observaciones de la comida casera", "t": "largo"}, {"k": "ali_huesos", "e": "¿Come huesos?", "t": "sino"}, {"k": "ali_frecuencia", "e": "Frecuencia diaria", "t": "opcion", "o": ["1", "2", "3", "Disponible todo el tiempo"]}, {"k": "ali_agua", "e": "Ingestión de agua", "t": "sino"}, {"k": "ali_agua_obs", "e": "Observación (agua)", "t": "texto"}]}, {"id": "digestivo", "titulo": "Digestivo, evacuaciones y desparasitación", "grupo": "historia", "campos": [{"k": "dig_digestivo", "n": "Normal", "e": "Apetito", "t": "opcion", "o": ["Normal", "Selectivo", "Bajo"]}, {"k": "dig_evac_frecuencia", "n": "Normal", "def": 1, "e": "Evacuaciones: frecuencia", "t": "texto"}, {"k": "dig_evac_consistencia", "n": "APN", "def": 1, "e": "Evacuaciones: consistencia", "t": "texto"}, {"k": "dig_evac_color", "n": "APN", "def": 1, "e": "Evacuaciones: color", "t": "texto"}, {"k": "dig_evac_moco", "n": "APN", "def": 1, "e": "Evacuaciones: moco", "t": "texto"}, {"k": "dig_desparasitacion", "e": "Desparasitación", "t": "sino"}, {"k": "dig_copro", "si": "dig_desparasitacion", "e": "Copro", "t": "sino"}, {"k": "dig_producto", "w": 1, "si": "dig_desparasitacion", "e": "Observaciones", "t": "texto"}]}, {"id": "respiratorio", "titulo": "Respiratorio", "grupo": "historia", "campos": [{"k": "res_tos", "n": "No", "def": 1, "e": "Tos", "t": "sino"}, {"k": "res_disnea", "n": "No", "def": 1, "e": "Disnea", "t": "sino"}, {"k": "res_estornudos", "n": "No", "def": 1, "e": "Estornudos", "t": "sino"}, {"k": "res_mocos", "n": "No", "def": 1, "e": "Mocos", "t": "sino"}, {"k": "res_secrecion", "n": "No", "def": 1, "e": "Secreción nasal", "t": "sino"}, {"k": "res_polipnea", "n": "No", "def": 1, "e": "Polipnea", "t": "sino"}, {"k": "res_cianosis", "n": "No", "def": 1, "e": "Cianosis", "t": "sino"}, {"k": "res_leganas", "n": "No", "def": 1, "e": "Legañas", "t": "sino"}]}, {"id": "reproductor", "titulo": "Reproductor", "grupo": "historia", "campos": [{"k": "rep_ovh", "def": "No", "e": "OVH / castrado", "t": "sino"}, {"k": "rep_desecho", "n": "No", "def": 1, "e": "Desecho vulvar / prepucial", "t": "sino"}, {"k": "rep_lamido", "n": "No", "def": 1, "e": "Lamido excesivo", "t": "sino"}, {"k": "rep_celos", "def": "No", "na": 1, "e": "Celos regulares", "t": "sino"}, {"k": "rep_fecha_celo", "e": "Fecha del último celo", "t": "texto"}]}, {"id": "hist_obs", "titulo": "Observaciones generales", "grupo": "historia", "campos": [{"k": "hist_obs", "w": 1, "e": "Observaciones generales de la historia clínica", "t": "largo"}]}]}, {"id": "examen", "titulo": "Examen físico", "secciones": [{"id": "signos", "titulo": "Signos y observaciones", "campos": [{"k": "ex_fc", "e": "FC (frecuencia cardiaca)", "t": "num", "u": "lat/min", "min": 0, "max": 400}, {"k": "ex_fr", "e": "FR (frecuencia respiratoria)", "t": "num", "u": "resp/min", "min": 0, "max": 300}, {"k": "ex_tllc", "e": "T.LLC. (tiempo de llenado capilar)", "t": "num", "u": "seg", "min": -1, "max": 30}, {"k": "ex_pulso", "e": "Pulso", "t": "texto"}, {"k": "ex_temp", "e": "Temperatura", "t": "num", "u": "°C", "min": 25, "max": 45}, {"k": "ex_cc", "e": "C.C. (condición corporal)", "t": "texto"}, {"k": "ex_observaciones", "w": 1, "e": "Observaciones del examen", "t": "largo"}]}, {"id": "generales", "titulo": "Datos del día", "campos": [{"k": "ex_peso", "e": "Peso", "t": "num", "u": "kg", "min": 0, "max": 200}, {"k": "ex_actitud", "n": "APN", "e": "Actitud", "t": "marcas", "o": ["APN", "Sociable", "Temeroso", "Agresivo", "Indiferente"], "w": 1}, {"k": "ex_hidratacion", "n": "APN", "e": "Hidratación", "t": "marcas", "uno": 1, "o": ["APN", "5%", "6-8%", "10%", "12%"], "w": 1}]}, {"id": "linfonodos", "titulo": "Linfonodos", "campos": [{"k": "ex_lin_apn", "gate": 1, "def": 1, "n": "APN", "e": "Sin alteraciones", "t": "marcas", "o": ["APN"], "med": 1}, {"k": "ex_lin_prescapulares", "n": "APN", "e": "Prescapulares", "t": "texto"}, {"k": "ex_lin_submandibulares", "n": "APN", "e": "Submandibulares", "t": "texto"}, {"k": "ex_lin_inguinales", "n": "APN", "e": "Inguinales", "t": "texto"}, {"k": "ex_lin_popliteos", "n": "APN", "e": "Poplíteos", "t": "texto"}]}, {"id": "bucal", "titulo": "Cavidad bucal", "campos": [{"k": "ex_bucal_apn", "gate": 1, "def": 1, "n": "APN", "e": "Sin alteraciones", "t": "marcas", "o": ["APN"], "med": 1}, {"k": "ex_dentadura", "n": "APN", "e": "Dentadura", "t": "marcas", "o": ["APN", "Desgaste", "Pérdida", "Hipoplasia"], "w": 1}, {"k": "ex_sarro", "n": "No", "e": "Sarro", "t": "marcas", "o": ["No", "Poco", "Abundante"], "med": 1}, {"k": "ex_encias", "n": "APN", "e": "Encías", "t": "marcas", "o": ["APN", "Gingivitis", "Estomatitis"], "med": 1}]}, {"id": "parpados", "titulo": "Párpados", "campos": [{"k": "ex_parpados_apn", "gate": 1, "def": 1, "n": "APN", "e": "Sin alteraciones", "t": "marcas", "o": ["APN"], "med": 1}, {"k": "ex_parpados", "e": "Alteraciones de párpados", "t": "marcas", "o": ["Entropión", "Ectropión", "Blefaritis"], "w": 1}]}, {"id": "ojos", "titulo": "Ojos", "campos": [{"k": "ex_ojos_apn", "gate": 1, "def": 1, "n": "APN", "e": "Sin alteraciones", "t": "marcas", "o": ["APN"], "med": 1}, {"k": "ex_ojo_humedad", "n": "APN", "e": "Humedad", "t": "marcas", "o": ["APN", "Seco"], "med": 1}, {"k": "ex_ojo_cristalino", "n": "APN", "e": "Cristalino", "t": "marcas", "o": ["APN", "Catarata"], "med": 1}, {"k": "ex_ojo_vaso", "n": "APN", "e": "Vaso epiescleral", "t": "marcas", "o": ["APN", "Congestión"], "med": 1}, {"k": "ex_ojo_cornea", "n": "APN", "e": "Córnea", "t": "marcas", "o": ["APN", "Seco"], "med": 1}, {"k": "ex_ojo_epifora", "n": "No", "e": "Epífora", "t": "sino"}]}, {"id": "respiratorio", "titulo": "Sistema respiratorio", "campos": [{"k": "ex_res_apn", "gate": 1, "def": 1, "n": "APN", "e": "Sin alteraciones", "t": "marcas", "o": ["APN"], "med": 1}, {"k": "ex_res_respiracion", "e": "Respiración", "t": "marcas", "o": ["Costal", "Costo abdominal", "Superficial", "Profunda"], "w": 1}, {"k": "ex_res_ritmo", "n": "APN", "e": "Ritmo", "t": "marcas", "o": ["APN", "Polipnea"], "med": 1}, {"k": "ex_res_sonidos", "n": "APN", "e": "Sonidos respiratorios", "t": "marcas", "o": ["APN"], "med": 1}, {"k": "ex_res_sonidos_desc", "e": "Sonidos respiratorios: describa", "t": "texto", "w": 1}]}, {"id": "cardio", "titulo": "Sistema cardiovascular", "campos": [{"k": "ex_card_apn", "gate": 1, "def": 1, "n": "APN", "e": "Sin alteraciones", "t": "marcas", "o": ["APN"], "med": 1}, {"k": "ex_val_sonidos", "n": "APN", "e": "Sonidos valvulares", "t": "marcas", "o": ["APN"], "med": 1}, {"k": "ex_val_disrritmias", "e": "Disrritmias", "t": "marcas", "o": ["Soplo"], "med": 1}, {"k": "ex_val_secuencia", "si": "ex_val_disrritmias", "siv": "Soplo", "e": "Soplo: secuencia", "t": "marcas", "o": ["Diástole", "Sístole"], "med": 1}, {"k": "ex_val_arritmias", "e": "Arritmias", "t": "marcas", "o": ["Taquicardia", "Bradicardia", "Extrasístoles", "Fibrilación auricular", "Otra"], "w": 1}, {"k": "ex_val_desc", "e": "Cardiovascular: describa", "t": "texto", "w": 1}]}, {"id": "digestivo_ex", "titulo": "Sistema digestivo", "campos": [{"k": "ex_dig_apn", "gate": 1, "def": 1, "n": "APN", "e": "Sin alteraciones", "t": "marcas", "o": ["APN"], "med": 1}, {"k": "ex_dig_abdomen", "n": "APN", "e": "Palpación abdominal", "t": "marcas", "o": ["APN", "Dolor", "Distensión", "Masas", "Gas", "Líquido libre"], "w": 1}, {"k": "ex_dig_vomito", "n": "No", "def": 1, "e": "Vómito", "t": "sino"}, {"k": "ex_dig_diarrea", "n": "No", "def": 1, "e": "Diarrea", "t": "sino"}, {"k": "ex_dig_desc", "e": "Digestivo: describa", "t": "texto", "w": 1}]}, {"id": "palpacion", "titulo": "Palpación", "campos": [{"k": "ex_palpacion", "w": 1, "e": "Palpación", "t": "largo"}]}, {"id": "musculo", "titulo": "Sistema musculoesquelético", "campos": [{"k": "ex_musculo", "n": "APN", "e": "Musculoesquelético", "t": "marcas", "o": ["APN", "Claudicación", "Atrofia muscular", "Dificultad para incorporarse", "Trauma"], "w": 1}]}, {"id": "nervioso", "titulo": "Sistema nervioso", "campos": [{"k": "ex_nervioso", "n": "APN", "e": "Nervioso", "t": "marcas", "o": ["APN", "Convulsiones", "Inclinación de la cabeza", "Mioclonías", "Incontinencia fecal", "Incontinencia urinaria", "Ceguera", "Sordera", "Paresia"], "w": 1}]}, {"id": "urinario", "titulo": "Urinario", "campos": [{"k": "uri_hematuria", "n": "No", "def": 1, "e": "Hematuria", "t": "sino"}, {"k": "uri_disuria", "n": "No", "def": 1, "e": "Disuria", "t": "sino"}, {"k": "uri_incontinencia", "n": "No", "def": 1, "e": "Incontinencia", "t": "sino"}, {"k": "uri_lamido", "n": "No", "def": 1, "e": "Lamido excesivo", "t": "sino"}, {"k": "uri_anuria", "n": "No", "def": 1, "e": "Anuria", "t": "sino"}, {"k": "uri_gotea_pus", "n": "No", "def": 1, "e": "Gotea pus", "t": "sino"}, {"k": "uri_gotea_sangre", "n": "No", "def": 1, "e": "Gotea sangre", "t": "sino"}, {"k": "uri_olor", "n": "No", "def": 1, "e": "Olor fétido", "t": "sino"}]}, {"id": "piel", "titulo": "Piel", "campos": [{"k": "piel_lesiones", "n": "APN", "w": 1, "e": "Lesiones (marca las que apliquen)", "t": "marcas", "o": ["APN", "Máculas", "Pápulas", "Pústulas", "Escamas", "Costras", "Hiperpigmentación", "Pulgas/garrapatas"]}, {"k": "piel_lesiones_txt", "w": 1, "e": "Lesiones en piel (describir)", "t": "texto"}, {"k": "piel_frec_bano", "e": "Frecuencia de baño", "t": "texto"}, {"k": "piel_producto", "e": "Producto", "t": "texto"}, {"k": "piel_prurito", "e": "Prurito (1 a 5)", "t": "opcion", "cel": 1, "o": ["1", "2", "3", "4", "5"]}]}]}, {"id": "dx", "titulo": "Diagnóstico y tratamiento", "secciones": [{"id": "pruebas", "titulo": "Pruebas de apoyo al diagnóstico", "campos": [{"k": "dx_pruebas", "w": 1, "e": "Pruebas solicitadas o realizadas (se cobran solas)", "t": "largo", "r": ["Radiografía", "BH", "Q Completa", "Q Renal", "Q Anestésico", "Ultrasonido", "Snap Parvo"], "rk": ["DX-RADIOGRAFIA", "DX-BH", "DX-QCOMPLETA", "DX-QRENAL", "DX-QANESTESICO", "DX-ULTRASONIDO", "DX-SNAPPARVO"], "cat": "dx"}, {"k": "dx_fotos", "w": 1, "e": "Fotos de las pruebas (radiografías, laboratorio, ultrasonido…)", "t": "fotos"}]}, {"id": "diagnostico", "titulo": "Diagnóstico", "campos": [{"k": "dx_posibilidades", "w": 1, "e": "Posibilidades diagnósticas", "t": "largo"}, {"k": "dx_final", "w": 1, "e": "Diagnóstico final", "t": "largo"}]}, {"id": "destino", "titulo": "¿Qué sigue?", "campos": [{"k": "dx_destino", "w": 1, "e": "Elige una o las dos", "t": "marcas", "def": "Tratamiento", "o": ["Hospitalización", "Tratamiento"]}]}, {"id": "tratamiento", "titulo": "Tratamiento (receta)", "nota": "Los medicamentos se agregan abajo, en «Lo que se le hizo a la mascota»: ahí (columna Medicamentos) se captura dosis, cada cuánto, por cuánto tiempo y vía, y salen solos en la receta.", "si": "dx_destino", "siv": "Tratamiento", "legado": "dx_tratamiento", "campos": [{"k": "dx_tratamiento", "w": 1, "e": "Indicaciones generales para el dueño (cuidados, dieta, reposo)", "t": "largo"}]}, {"id": "hospitalizacion", "titulo": "Hospitalización", "si": "dx_destino", "siv": "Hospitalización", "campos": [{"k": "hosp_fecha", "e": "Fecha de ingreso", "t": "fecha"}, {"k": "hosp_dias", "e": "Días estimados", "t": "num", "u": "días", "min": 0, "max": 90}, {"k": "hosp_motivo", "w": 1, "e": "Motivo de la hospitalización", "t": "largo"}, {"k": "hosp_indicaciones", "w": 1, "e": "Indicaciones y plan de medicación", "t": "largo"}, {"k": "hosp_dieta", "w": 1, "e": "Alimentación y agua", "t": "texto"}, {"k": "hosp_monitoreo", "w": 1, "e": "Monitoreo (qué vigilar y cada cuánto)", "t": "largo"}, {"k": "hosp_obs", "w": 1, "e": "Observaciones", "t": "largo"}]}, {"id": "cargos", "titulo": "Tratamientos y medicamentos", "campos": [{"k": "cargos", "w": 1, "e": "Tratamientos y medicamentos", "t": "cargos"}]}]}, {"id": "cierre", "titulo": "Cobro", "secciones": [{"id": "cobro", "titulo": "Cobro", "campos": [{"k": "cierre_lineas", "w": 1, "e": "Detalle del cobro", "t": "ajustes"}, {"k": "cierre_resumen", "w": 1, "e": "Resumen del cobro", "t": "resumen"}, {"k": "cierre_anticipo", "e": "Anticipo o pago recibido", "t": "num", "u": "$", "min": 0, "max": 1000000}, {"k": "cierre_forma_pago", "e": "Forma de pago", "t": "opcion", "o": ["Efectivo", "Tarjeta", "Transferencia", "Otro"]}]}, {"id": "proxima", "titulo": "Próxima cita", "campos": [{"k": "cierre_proxima_fecha", "e": "Fecha de la próxima cita", "t": "fecha"}, {"k": "cierre_proxima_obs", "w": 1, "e": "Motivo u observaciones de la próxima cita", "t": "largo"}]}]}], "porTipo": {"vacuna": [{"id": "dx", "titulo": "Vacuna aplicada", "secciones": [{"id": "vacuna", "titulo": "Vacuna", "campos": [{"k": "apl_vacuna", "e": "Vacuna aplicada", "t": "opcion", "o": ["Múltiple (perro)", "Rabia", "Bordetella", "Triple felina", "Leucemia felina", "Otra"]}, {"k": "apl_vacuna_otra", "e": "Si es otra, ¿cuál? (o nombre del producto)", "t": "texto"}, {"k": "apl_lote", "e": "Lote", "t": "texto"}, {"k": "apl_peso", "e": "Peso de hoy", "t": "num", "u": "kg", "min": 0, "max": 200}, {"k": "apl_obs", "w": 1, "e": "Observaciones (reacción, comentarios para la cartilla)", "t": "largo"}]}, {"id": "cargos", "titulo": "Tratamientos y medicamentos", "campos": [{"k": "cargos", "w": 1, "e": "Tratamientos y medicamentos", "t": "cargos"}]}]}, {"id": "cierre", "titulo": "Cobro", "secciones": [{"id": "cobro", "titulo": "Cobro", "campos": [{"k": "cierre_lineas", "w": 1, "e": "Detalle del cobro", "t": "ajustes"}, {"k": "cierre_resumen", "w": 1, "e": "Resumen del cobro", "t": "resumen"}, {"k": "cierre_anticipo", "e": "Anticipo o pago recibido", "t": "num", "u": "$", "min": 0, "max": 1000000}, {"k": "cierre_forma_pago", "e": "Forma de pago", "t": "opcion", "o": ["Efectivo", "Tarjeta", "Transferencia", "Otro"]}]}, {"id": "proxima", "titulo": "Próxima cita", "campos": [{"k": "cierre_proxima_fecha", "e": "Fecha de la próxima cita", "t": "fecha"}, {"k": "cierre_proxima_obs", "w": 1, "e": "Motivo u observaciones de la próxima cita", "t": "largo"}]}]}], "estetica": [{"id": "dx", "titulo": "Servicio de estética", "secciones": [{"id": "servicio", "titulo": "Servicio", "campos": [{"k": "est_servicio", "e": "Servicio", "t": "opcion", "o": ["Estética completa (corte, baño y limpieza de oídos)", "Solo baño", "Baño medicado (para quitar pulgas)"]}, {"k": "est_tamano", "e": "Tamaño (según raza; define la tarifa)", "t": "opcion", "o": ["Pequeño", "Mediano", "Grande", "Gigante"]}, {"k": "est_peso", "e": "Peso de hoy", "t": "num", "u": "kg", "min": 0, "max": 200}, {"k": "est_obs", "w": 1, "e": "Observaciones (nudos, piel, comportamiento, indicaciones del dueño)", "t": "largo"}]}, {"id": "cargos", "titulo": "Servicios y productos (cargos)", "campos": [{"k": "cargos", "w": 1, "e": "Servicios y productos", "t": "cargos"}]}]}, {"id": "cierre", "titulo": "Cobro", "secciones": [{"id": "cobro", "titulo": "Cobro", "campos": [{"k": "cierre_lineas", "w": 1, "e": "Detalle del cobro", "t": "ajustes"}, {"k": "cierre_resumen", "w": 1, "e": "Resumen del cobro", "t": "resumen"}, {"k": "cierre_anticipo", "e": "Anticipo o pago recibido", "t": "num", "u": "$", "min": 0, "max": 1000000}, {"k": "cierre_forma_pago", "e": "Forma de pago", "t": "opcion", "o": ["Efectivo", "Tarjeta", "Transferencia", "Otro"]}]}, {"id": "proxima", "titulo": "Próxima cita", "campos": [{"k": "cierre_proxima_fecha", "e": "Fecha de la próxima cita", "t": "fecha"}, {"k": "cierre_proxima_obs", "w": 1, "e": "Motivo u observaciones de la próxima cita", "t": "largo"}]}]}], "procedimiento": [{"id": "dx", "titulo": "Estudio o cirugía", "secciones": [{"id": "procedimiento", "titulo": "Estudio o cirugía", "campos": [{"k": "proc_tipo", "w": 1, "e": "Servicios (marca los que apliquen)", "t": "marcas", "o": ["Radiografía", "Ultrasonido", "Cirugía"]}, {"k": "proc_zona", "e": "Zona o procedimiento (ej. tórax, abdomen, esterilización)", "t": "texto"}, {"k": "proc_peso", "e": "Peso de hoy", "t": "num", "u": "kg", "min": 0, "max": 200}, {"k": "proc_obs", "w": 1, "e": "Hallazgos, indicaciones y observaciones", "t": "largo"}]}, {"id": "cargos", "titulo": "Tratamientos y medicamentos", "campos": [{"k": "cargos", "w": 1, "e": "Tratamientos y medicamentos", "t": "cargos"}]}]}, {"id": "cierre", "titulo": "Cobro", "secciones": [{"id": "cobro", "titulo": "Cobro", "campos": [{"k": "cierre_lineas", "w": 1, "e": "Detalle del cobro", "t": "ajustes"}, {"k": "cierre_resumen", "w": 1, "e": "Resumen del cobro", "t": "resumen"}, {"k": "cierre_anticipo", "e": "Anticipo o pago recibido", "t": "num", "u": "$", "min": 0, "max": 1000000}, {"k": "cierre_forma_pago", "e": "Forma de pago", "t": "opcion", "o": ["Efectivo", "Tarjeta", "Transferencia", "Otro"]}]}, {"id": "proxima", "titulo": "Próxima cita", "campos": [{"k": "cierre_proxima_fecha", "e": "Fecha de la próxima cita", "t": "fecha"}, {"k": "cierre_proxima_obs", "w": 1, "e": "Motivo u observaciones de la próxima cita", "t": "largo"}]}]}], "medicamento": [{"id": "dx", "titulo": "Medicamento aplicado", "secciones": [{"id": "medicamento", "titulo": "Medicamento", "campos": [{"k": "apl_medicamento", "e": "Medicamento aplicado", "t": "texto"}, {"k": "apl_dosis", "e": "Dosis", "t": "texto"}, {"k": "apl_via", "e": "Vía de aplicación", "t": "opcion", "o": ["Intramuscular", "Subcutánea", "Intravenosa", "Oral", "Tópica", "Otra"]}, {"k": "apl_aplico", "e": "Quién lo aplicó", "t": "texto"}, {"k": "apl_indicado", "e": "Recetado por (consulta anterior o médico)", "t": "texto"}, {"k": "apl_obs", "w": 1, "e": "Observaciones", "t": "largo"}]}, {"id": "cargos", "titulo": "Tratamientos y medicamentos", "campos": [{"k": "cargos", "w": 1, "e": "Tratamientos y medicamentos", "t": "cargos"}]}]}, {"id": "cierre", "titulo": "Cobro", "secciones": [{"id": "cobro", "titulo": "Cobro", "campos": [{"k": "cierre_lineas", "w": 1, "e": "Detalle del cobro", "t": "ajustes"}, {"k": "cierre_resumen", "w": 1, "e": "Resumen del cobro", "t": "resumen"}, {"k": "cierre_anticipo", "e": "Anticipo o pago recibido", "t": "num", "u": "$", "min": 0, "max": 1000000}, {"k": "cierre_forma_pago", "e": "Forma de pago", "t": "opcion", "o": ["Efectivo", "Tarjeta", "Transferencia", "Otro"]}]}, {"id": "proxima", "titulo": "Próxima cita", "campos": [{"k": "cierre_proxima_fecha", "e": "Fecha de la próxima cita", "t": "fecha"}, {"k": "cierre_proxima_obs", "w": 1, "e": "Motivo u observaciones de la próxima cita", "t": "largo"}]}]}]}, "estetica": {"servicios": [{"n": "Estética completa (corte, baño y limpieza de oídos)", "k": "COMPLETA"}, {"n": "Solo baño", "k": "BANO"}, {"n": "Baño medicado (para quitar pulgas)", "k": "MEDICADO"}], "tamanos": [{"n": "Pequeño", "k": "PEQ"}, {"n": "Mediano", "k": "MED"}, {"n": "Grande", "k": "GDE"}, {"n": "Gigante", "k": "GIG"}]}};
+
+  /* ---------- utilidades ---------- */
+  function norm(t) { return String(t === undefined || t === null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+  /** Igual que ordenarMascotas_ de Apps Script: por nombre, con los números por su valor (Max 2 antes que Max 10). */
+  function ordenarMascotas(l) {
+    if (!Array.isArray(l)) return l;
+    var clave = function (m) { return norm(m && m.nombre).replace(/\d+/g, function (d) { return ('0000000000' + d).slice(-10); }); };
+    return l.map(function (m, i) { return { m: m, k: clave(m), i: i }; })
+      .sort(function (a, b) { return a.k < b.k ? -1 : a.k > b.k ? 1 : a.i - b.i; }).map(function (x) { return x.m; });
+  }
+  function textoError(e) {
+    var m = String((e && e.message) || e || ''), c = e && e.code;
+    if (c === 'PGRST202' || /Could not find the function|schema cache/i.test(m)) return 'Falta aplicar una migración en Supabase (05 a 14) (la función que pide la pantalla no existe todavía).';
+    if (/JWT|expired|not authenticated|401/i.test(m) || c === 'PGRST301') return 'La sesión caducó. Vuelve a entrar.';
+    if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'No se pudo conectar. Revisa el internet e intenta de nuevo.';
+    return m;
+  }
+  function rpc(fn, args) {
+    return sb.rpc(fn, args || {}).then(function (r) {
+      if (r.error) { var er = new Error(textoError(r.error)); er.code = r.error.code; throw er; }
+      return r.data;
+    });
+  }
+  function num(v) { var n = Number(String(v === undefined || v === null ? '' : v).replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; }
+  function idOpc(v) { return v === undefined || v === null || String(v) === '' ? null : Number(v); }
+  function txt(v) { return v === undefined || v === null ? '' : String(v); }
+  var NO_DISPONIBLE = function (nombre) {
+    return { ok: false, error: 'Esta parte todavía no está en la versión nueva (' + nombre.replace('api_', '') + '). Se está pasando por etapas; mientras tanto se sigue usando en Apps Script.' };
+  };
+
+  function arreglarInicio(r) {
+    if (r && r.ok && r.resumen) { r.resumen.version = window.VERSION_UI; r.resumen.modoPruebas = false; r.resumen.claveDebil = false; }
+    return r;
+  }
+
+  /* ---------- una función por cada api_* que usa la pantalla ---------- */
+  var F = {
+    api_ping: function () { return sb.auth.getSession().then(function (r) { return { ok: !!(r.data && r.data.session), t: Date.now() }; }); },
+    api_inicio: function () { return rpc('api_inicio').then(arreglarInicio); },
+    api_actualizar: function () {
+      return rpc('api_inicio').then(arreglarInicio).then(function (r) { if (r && r.ok) { r.nuevos = 0; r.importError = ''; r.revisoTally = false; } return r; });
+    },
+    api_resumen: function () { return rpc('api_inicio').then(arreglarInicio).then(function (r) { return r && r.ok ? { ok: true, resumen: r.resumen } : r; }); },
+    api_pendientes: function () { return Promise.resolve({ ok: true, pendientes: [] }); },
+    api_esquema: function () { return Promise.resolve(ESQUEMA); },
+
+    api_buscar: function (texto, filtros) {
+      return rpc('api_buscar', { p_texto: txt(texto), p_filtros: filtros || {} }).then(function (r) {
+        if (r && r.resultados) r.resultados.forEach(function (x) { x.mascotas = ordenarMascotas(x.mascotas); });
+        return r;
+      });
+    },
+    api_cliente: function (id) { return rpc('api_cliente', { p_id: Number(id) }).then(function (r) { if (r && r.mascotas) r.mascotas = ordenarMascotas(r.mascotas); return r; }); },
+    api_porCobrar: function () { return rpc('api_por_cobrar'); },
+    api_pagosCliente: function (id) { return rpc('api_pagos_cliente', { p_id: Number(id) }).then(function (r) { if (r && r.mascotas) r.mascotas = ordenarMascotas(r.mascotas); return r; }); },
+    api_balances: function (ids) { return rpc('api_balances', { p_ids: (Array.isArray(ids) ? ids : []).map(Number).filter(function (n) { return n > 0; }) }); },
+    api_bitacora: function (idMascota) { return rpc('api_bitacora', { p_mascota: txt(idMascota) }); },
+    api_historialAvimark: function (idMascota) { return rpc('api_historial_avimark', { p_mascota: txt(idMascota) }); },
+
+    api_consultas: function () { return rpc('api_consultas'); },
+    api_consulta: function (id) { return rpc('api_consulta', { p_id: txt(id) }); },
+    api_cambios: function (id) { return rpc('api_cambios', { p_id: txt(id) }); },
+    api_ultimaConsulta: function (idMascota) { return rpc('api_ultima_consulta', { p_mascota: txt(idMascota) }); },
+    api_productosCons: function () { return rpc('api_productos_cons'); },
+
+    api_abrirConsulta: function (idMascota, idVisita, usuario, tipoNuevo, idCliente) {
+      return rpc('api_abrir_consulta', { p_mascota: txt(idMascota), p_visita: txt(idVisita), p_usuario: txt(usuario), p_tipo: txt(tipoNuevo), p_cliente_esperado: idOpc(idCliente) });
+    },
+    api_guardarPaso: function (id, paso, datos, version, usuario) {
+      return rpc('api_guardar_paso', { p_consulta: txt(id), p_paso: txt(paso), p_datos: datos || {}, p_version: Number(version) || 0, p_usuario: txt(usuario) });
+    },
+    api_abonar: function (idConsulta, monto, forma, nota, usuario) {
+      return rpc('api_abonar', { p_consulta: txt(idConsulta), p_monto: num(monto), p_forma: txt(forma), p_nota: txt(nota), p_usuario: txt(usuario) });
+    },
+    api_anularAbono: function (idAbono, motivo, usuario) { return rpc('api_anular_abono', { p_abono: txt(idAbono), p_motivo: txt(motivo), p_usuario: txt(usuario) }); },
+    api_responsable: function (id, nuevo, usuario) { return rpc('api_responsable', { p_consulta: txt(id), p_nuevo: txt(nuevo), p_usuario: txt(usuario) }); },
+    api_estadoConsulta: function (id, cerrar, usuario) { return rpc('api_estado_consulta', { p_consulta: txt(id), p_cerrar: !!cerrar, p_usuario: txt(usuario) }); },
+    api_anularConsulta: function (id, motivo, usuario, anular) { return rpc('api_anular_consulta', { p_consulta: txt(id), p_motivo: txt(motivo), p_usuario: txt(usuario), p_anular: anular !== false }); },
+    api_completarMascota: function (id, datos, usuario) { return rpc('api_completar_mascota', { p_id: txt(id), p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_cambiarMascotaConsulta: function (id, idMascota, usuario) { return rpc('api_cambiar_mascota_consulta', { p_consulta: txt(id), p_mascota: txt(idMascota), p_usuario: txt(usuario) }); },
+
+    /* Partes que la pantalla abre sola al entrar a una ficha: se contestan vacías para que no muestren errores. */
+    /* Agenda de estética: citas, bloqueos y horas extra viven en la base (en Apps Script vivían en Google Calendar). */
+    api_agenda: function (desde) { return rpc('api_agenda', { p_desde: txt(desde) }); },
+    api_agendar: function (datos, usuario) { return rpc('api_agendar', { p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_cancelarCita: function (id, motivo, usuario) { return rpc('api_cancelar_cita', { p_id: txt(id), p_motivo: txt(motivo), p_usuario: txt(usuario) }); },
+    api_bloquear: function (datos, usuario) { return rpc('api_bloquear', { p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_desbloquear: function (id, usuario) { return rpc('api_desbloquear', { p_id: txt(id), p_usuario: txt(usuario) }); },
+    api_horasExtra: function (datos, usuario) { return rpc('api_horas_extra', { p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_quitarHorasExtra: function (id, usuario) { return rpc('api_quitar_horas_extra', { p_id: txt(id), p_usuario: txt(usuario) }); },
+
+    /* Tienda: catálogo, ventas, tarjetas de lealtad del proveedor y bulto gratis. */
+    api_tienda: function () { return rpc('api_tienda'); },
+    /* código de barras y alta de productos (migración 09). claveCostos no se usa aquí: el permiso de precio lo decide la base según el usuario (doctor). */
+    api_productosAdmin: function () { return rpc('api_productos_admin'); },
+    api_productoPorCodigo: function (codigo) { return rpc('api_producto_por_codigo', { p_codigo: txt(codigo) }); },
+    api_productoCodigo: function (claveProducto, codigo, accion, usuario) { return rpc('api_producto_codigo', { p_clave: txt(claveProducto), p_codigo: txt(codigo), p_accion: txt(accion), p_usuario: txt(usuario) }); },
+    api_guardarProducto: function (datos, usuario) { return rpc('api_producto_guardar', { p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_comprasInit: function () { return rpc('api_compras_init'); },
+    api_compras: function (desde, hasta) { return rpc('api_compras', { p_desde: txt(desde) || null, p_hasta: txt(hasta) || null }); },
+    api_compra: function (id) { return rpc('api_compra', { p_id: txt(id) }); },
+    api_compraCrear: function (datos, usuario) { return rpc('api_compra_crear', { p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_cancelarCompra: function (id, motivo, usuario) { return rpc('api_cancelar_compra', { p_id: txt(id), p_motivo: txt(motivo), p_usuario: txt(usuario) }); },
+    /* costos por confirmar (migración 12): en Supabase confirma el doctor por su usuario (rol); la clave de administración ya la verificó el candado */
+    api_costosPropuestas: function () { return rpc('api_costos_propuestas'); },
+    api_costoDecidir: function (claveProducto, idCompra, decision, usuario) { return rpc('api_costo_decidir', { p_clave: txt(claveProducto), p_compra: txt(idCompra), p_decision: txt(decision), p_usuario: txt(usuario) }); },
+    api_productosResumen: function (desde, hasta) { return rpc('api_productos_resumen', { p_desde: txt(desde) || null, p_hasta: txt(hasta) || null }); },
+    api_proveedores: function () { return rpc('api_proveedores'); },
+    api_proveedorGuardar: function (datos, usuario) { return rpc('api_proveedor_guardar', { p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_pagosPanel: function () { return rpc('api_pagos_panel'); },
+    api_pagoRegistrar: function (idCompra, datos, usuario) { return rpc('api_pago_registrar', { p_compra: txt(idCompra), p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_pagoAnular: function (idPago, motivo, usuario) { return rpc('api_pago_anular', { p_pago: txt(idPago), p_motivo: txt(motivo), p_usuario: txt(usuario) }); },
+    /* Costos de la tienda y de las tarifas, y Reportes (migración 14). Todo esto va detrás de la clave de administración. */
+    api_costos: function () { return rpc('api_costos'); },
+    api_guardarCosto: function (claveProducto, costo, usuario) { return rpc('api_guardar_costo', { p_clave: txt(claveProducto), p_costo: txt(costo), p_usuario: txt(usuario) }); },
+    api_tarifaCosto: function (claveTarifa, costo, usuario) { return rpc('api_tarifa_costo_guardar', { p_clave: txt(claveTarifa), p_costo: txt(costo), p_usuario: txt(usuario) }); },
+    api_reportes: function (desde, hasta) { return rpc('api_reportes', { p_desde: txt(desde) || null, p_hasta: txt(hasta) || null }); },
+    api_compraPagoDatos: function (id, datos, usuario) { return rpc('api_compra_pago_datos', { p_id: txt(id), p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_crearVenta: function (datos, usuario) { return rpc('api_crear_venta', { p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_ventas: function (dia) { return rpc('api_ventas', { p_dia: txt(dia) }); },
+    api_venta: function (id) { return rpc('api_venta', { p_id: txt(id) }); },
+    api_cancelarVenta: function (id, motivo, usuario) { return rpc('api_cancelar_venta', { p_id: txt(id), p_motivo: txt(motivo), p_usuario: txt(usuario) }); },
+    api_ventasMascota: function (idMascota) { return rpc('api_ventas_mascota', { p_mascota: txt(idMascota) }); },
+    api_tarjetasCliente: function (id) { return rpc('api_tarjetas_cliente', { p_id: Number(id) }); },
+    api_tarjetas: function () { return rpc('api_tarjetas'); },
+    api_reclamo: function (id) { return rpc('api_reclamo', { p_id: txt(id) }); },
+    api_foto: function () { return Promise.resolve({ ok: false, error: 'Las fotos todavía no están en la versión nueva.' }); }
+  };
+
+  /* ---------- clave de administración ----------
+   * La pantalla manda la clave como PRIMER argumento de cada llamada protegida (igual que en Apps Script). Aquí se abre el acceso en la base
+   * (api_admin_abrir: dura 15 min por usuario y se verifica en el servidor) y se quita ese argumento antes de llamar a la función. */
+  var GATED = {};
+  ['api_comprasInit', 'api_compras', 'api_compra', 'api_compraCrear', 'api_cancelarCompra', 'api_proveedores', 'api_proveedorGuardar', 'api_pagosPanel', 'api_pagoRegistrar', 'api_pagoAnular',
+    'api_compraPagoDatos', 'api_productosResumen', 'api_costos', 'api_guardarCosto', 'api_costosPropuestas', 'api_costoDecidir', 'api_reportes', 'api_tarifaCosto'].forEach(function (n) { GATED[n] = 1; });
+  var ADM_SEG = 4 * 60 * 1000;           // se vuelve a confirmar con el servidor cada 4 minutos como máximo
+  var adm = { clave: '', hasta: 0 };
+  function abrirAdmin(clave) {
+    clave = txt(clave);
+    if (!clave) return Promise.resolve({ ok: false, error: 'Escribe la clave de administración.' });
+    if (adm.clave === clave && Date.now() < adm.hasta) return Promise.resolve({ ok: true });
+    return rpc('api_admin_abrir', { p_clave: clave }).then(function (r) {
+      if (r && r.ok) { adm.clave = clave; adm.hasta = Date.now() + ADM_SEG; } else { adm.clave = ''; adm.hasta = 0; }
+      return r;
+    });
+  }
+  F.api_adminAbrir = function (clave) { return abrirAdmin(clave); };
+  F.api_adminCerrar = function () { adm.clave = ''; adm.hasta = 0; return rpc('api_admin_cerrar'); };
+
+  DV.llamar = function (nombre, args) {
+    var f = F[nombre];
+    if (!f) return Promise.resolve(NO_DISPONIBLE(nombre));
+    args = args || [];
+    if (!GATED[nombre]) return Promise.resolve().then(function () { return f.apply(null, args); });
+    var clave = args[0], resto = args.slice(1);
+    var llamar = function () { return f.apply(null, resto); };
+    return abrirAdmin(clave).then(function (a) {
+      if (!a || !a.ok) return a || { ok: false, error: 'No se pudo abrir la sección.' };
+      return llamar().then(function (r) {
+        if (r && r.bloqueado === true && !r.claveMala) {      // el acceso del servidor venció: se abre de nuevo con la clave y se repite UNA vez
+          adm.hasta = 0;
+          return abrirAdmin(clave).then(function (a2) { return a2 && a2.ok ? llamar() : a2; });
+        }
+        return r;
+      });
+    });
+  };
+
+  /* ---------- sesión ---------- */
+  DV.salir = function () { sb.auth.signOut().then(function () { window.location.reload(); }); };
+  DV.sesion = function () { return sb.auth.getSession().then(function (r) { return r.data && r.data.session ? r.data.session : null; }); };
+  DV.entrar = function (correo, clave) {
+    return sb.auth.signInWithPassword({ email: String(correo || '').trim(), password: String(clave || '') }).then(function (r) {
+      if (r.error) {
+        var malas = r.error.status === 400 || /invalid login/i.test(r.error.message || '');
+        throw new Error(malas ? 'Correo o contraseña incorrectos.' : 'No se pudo conectar. Revisa el internet e intenta de nuevo.');
+      }
+      DV.correo = (r.data && r.data.user && r.data.user.email) || '';
+      return r.data.session;
+    });
+  };
+  sb.auth.onAuthStateChange(function (evento) { if (evento === 'SIGNED_OUT' && window.S) { window.S.clave = ''; } });
+})();
