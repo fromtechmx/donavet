@@ -116,6 +116,7 @@
     api_costoDecidir: function (claveProducto, idCompra, decision, usuario) { return rpc('api_costo_decidir', { p_clave: txt(claveProducto), p_compra: txt(idCompra), p_decision: txt(decision), p_usuario: txt(usuario) }); },
     api_productosResumen: function (desde, hasta) { return rpc('api_productos_resumen', { p_desde: txt(desde) || null, p_hasta: txt(hasta) || null }); },
     api_proveedores: function () { return rpc('api_proveedores'); },
+    api_proveedorNotas: function (id) { return rpc('api_proveedor_notas', { p_id: txt(id) }); },
     api_proveedorGuardar: function (datos, usuario) { return rpc('api_proveedor_guardar', { p_datos: datos || {}, p_usuario: txt(usuario) }); },
     api_pagosPanel: function () { return rpc('api_pagos_panel'); },
     api_pagoRegistrar: function (idCompra, datos, usuario) { return rpc('api_pago_registrar', { p_compra: txt(idCompra), p_datos: datos || {}, p_usuario: txt(usuario) }); },
@@ -147,7 +148,7 @@
    * La pantalla manda la clave como PRIMER argumento de cada llamada protegida (igual que en Apps Script). Aquí se abre el acceso en la base
    * (api_admin_abrir: dura 15 min por usuario y se verifica en el servidor) y se quita ese argumento antes de llamar a la función. */
   var GATED = {};
-  ['api_comprasInit', 'api_compras', 'api_compra', 'api_compraCrear', 'api_cancelarCompra', 'api_proveedores', 'api_proveedorGuardar', 'api_pagosPanel', 'api_pagoRegistrar', 'api_pagoAnular', 'api_compraFactura', 'api_pagoComprobante', 'api_pagoComprobanteVer',
+  ['api_comprasInit', 'api_compras', 'api_compra', 'api_compraCrear', 'api_cancelarCompra', 'api_proveedores', 'api_proveedorNotas', 'api_proveedorGuardar', 'api_pagosPanel', 'api_pagoRegistrar', 'api_pagoAnular', 'api_compraFactura', 'api_pagoComprobante', 'api_pagoComprobanteVer',
     'api_compraPagoDatos', 'api_productosResumen', 'api_costos', 'api_guardarCosto', 'api_costosPropuestas', 'api_costoDecidir', 'api_reportes', 'api_ventasHistorico', 'api_comprasHistorico', 'api_tarifaCosto'].forEach(function (n) { GATED[n] = 1; });
   var ADM_SEG = 4 * 60 * 1000;           // se vuelve a confirmar con el servidor cada 4 minutos como máximo
   var adm = { clave: '', hasta: 0 };
