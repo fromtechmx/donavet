@@ -109,6 +109,8 @@
     api_comprasInit: function () { return rpc('api_compras_init'); },
     api_compras: function (desde, hasta) { return rpc('api_compras', { p_desde: txt(desde) || null, p_hasta: txt(hasta) || null }); },
     api_compra: function (id) { return rpc('api_compra', { p_id: txt(id) }); },
+    api_compraAlias: function (pid) { return rpc('api_compra_alias', { p_prov: txt(pid) }); },
+    api_compraAliasGuardar: function (pid, pares) { return rpc('api_compra_alias_guardar', { p_prov: txt(pid), p_pares: pares || [] }); },
     api_compraCrear: function (datos, usuario) { return rpc('api_compra_crear', { p_datos: datos || {}, p_usuario: txt(usuario) }); },
     api_cancelarCompra: function (id, motivo, usuario) { return rpc('api_cancelar_compra', { p_id: txt(id), p_motivo: txt(motivo), p_usuario: txt(usuario) }); },
     /* costos por confirmar (migración 12): en Supabase confirma el doctor por su usuario (rol); la clave de administración ya la verificó el candado */
@@ -149,7 +151,7 @@
    * La pantalla manda la clave como PRIMER argumento de cada llamada protegida (igual que en Apps Script). Aquí se abre el acceso en la base
    * (api_admin_abrir: dura 15 min por usuario y se verifica en el servidor) y se quita ese argumento antes de llamar a la función. */
   var GATED = {};
-  ['api_comprasInit', 'api_compras', 'api_compra', 'api_compraCrear', 'api_cancelarCompra', 'api_proveedores', 'api_proveedorNotas', 'api_proveedorEstadoCuenta', 'api_proveedorGuardar', 'api_pagosPanel', 'api_pagoRegistrar', 'api_pagoAnular', 'api_compraFactura', 'api_pagoComprobante', 'api_pagoComprobanteVer',
+  ['api_comprasInit', 'api_compras', 'api_compra', 'api_compraCrear', 'api_compraAlias', 'api_compraAliasGuardar', 'api_cancelarCompra', 'api_proveedores', 'api_proveedorNotas', 'api_proveedorEstadoCuenta', 'api_proveedorGuardar', 'api_pagosPanel', 'api_pagoRegistrar', 'api_pagoAnular', 'api_compraFactura', 'api_pagoComprobante', 'api_pagoComprobanteVer',
     'api_compraPagoDatos', 'api_productosResumen', 'api_costos', 'api_guardarCosto', 'api_costosPropuestas', 'api_costoDecidir', 'api_reportes', 'api_ventasHistorico', 'api_comprasHistorico', 'api_tarifaCosto'].forEach(function (n) { GATED[n] = 1; });
   var ADM_SEG = 4 * 60 * 1000;           // se vuelve a confirmar con el servidor cada 4 minutos como máximo
   var adm = { clave: '', hasta: 0 };
