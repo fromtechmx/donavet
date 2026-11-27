@@ -20,7 +20,7 @@
   }
   function textoError(e) {
     var m = String((e && e.message) || e || ''), c = e && e.code;
-    if (c === 'PGRST202' || /Could not find the function|schema cache/i.test(m)) return 'Falta aplicar una migración en Supabase (05 a 16) (la función que pide la pantalla no existe todavía).';
+    if (c === 'PGRST202' || /Could not find the function|schema cache/i.test(m)) return 'Falta aplicar una migración en Supabase (05 a 23) (la función que pide la pantalla no existe todavía).';
     if (/JWT|expired|not authenticated|401/i.test(m) || c === 'PGRST301') return 'La sesión caducó. Vuelve a entrar.';
     if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'No se pudo conectar. Revisa el internet e intenta de nuevo.';
     return m;
@@ -43,15 +43,55 @@
     return r;
   }
 
+
+  /* ---------- fotos de los registros de Tally (bucket privado «fotos-mascotas»): direcciones firmadas, se guardan 50 min ---------- */
+  var FOTOS = { cache: {} };
+  function firmarFotos(rutas) {
+    var ahora = Date.now(), faltan = rutas.filter(function (r) { return r && !(FOTOS.cache[r] && FOTOS.cache[r].hasta > ahora); });
+    if (!faltan.length) return Promise.resolve();
+    return Promise.resolve().then(function () { return sb.storage.from('fotos-mascotas').createSignedUrls(faltan, 3600); }).then(function (r) {
+      ((r && r.data) || []).forEach(function (x) { if (x && x.signedUrl && x.path) FOTOS.cache[x.path] = { url: x.signedUrl, hasta: ahora + 50 * 60 * 1000 }; });
+    }).catch(function () { /* sin foto: la tarjeta muestra la inicial de la mascota */ });
+  }
+  /** Pone la foto (miniatura y enlace) de cada registro pendiente y ordena las mascotas de las posibles coincidencias. */
+  function arreglarPendientes(r) {
+    if (!r || r.ok === false) return Promise.resolve(r);
+    var lista = r.pendientes || [];
+    Object.keys(r.coincidencias || {}).forEach(function (cod) { (r.coincidencias[cod] || []).forEach(function (c) { c.mascotas = ordenarMascotas(c.mascotas); }); });
+    var rutas = lista.map(function (p) { return p['Foto ruta']; }).filter(Boolean);
+    return firmarFotos(rutas).then(function () {
+      lista.forEach(function (p) { var f = p['Foto ruta'] && FOTOS.cache[p['Foto ruta']]; if (f) { p['Foto (miniatura)'] = f.url; p['Foto (enlace)'] = f.url; } });
+      return r;
+    });
+  }
+
   /* ---------- una función por cada api_* que usa la pantalla ---------- */
   var F = {
     api_ping: function () { return sb.auth.getSession().then(function (r) { return { ok: !!(r.data && r.data.session), t: Date.now() }; }); },
-    api_inicio: function () { return rpc('api_inicio').then(arreglarInicio); },
+    api_inicio: function () { return rpc('api_inicio').then(arreglarInicio).then(arreglarPendientes); },
     api_actualizar: function () {
-      return rpc('api_inicio').then(arreglarInicio).then(function (r) { if (r && r.ok) { r.nuevos = 0; r.importError = ''; r.revisoTally = false; } return r; });
+      return rpc('api_inicio').then(arreglarInicio).then(arreglarPendientes).then(function (r) { if (r && r.ok) { r.nuevos = 0; r.importError = ''; r.revisoTally = false; } return r; });
     },
     api_resumen: function () { return rpc('api_inicio').then(arreglarInicio).then(function (r) { return r && r.ok ? { ok: true, resumen: r.resumen } : r; }); },
-    api_pendientes: function () { return Promise.resolve({ ok: true, pendientes: [] }); },
+    api_pendientes: function () { return rpc('api_pendientes').then(arreglarPendientes); },
+    api_fotoPend: function (codigo, uri, usuario) {
+      var m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(txt(uri));
+      if (!m) return Promise.resolve({ ok: false, error: 'La foto debe ser JPG, PNG o WebP.' });
+      var bin = atob(m[2]), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var ext = m[1] === 'image/png' ? 'png' : (m[1] === 'image/webp' ? 'webp' : 'jpg');
+      var ruta = 'pendientes/' + txt(codigo).replace(/[^A-Za-z0-9_-]/g, '') + '-personal-' + Date.now() + '.' + ext;
+      return sb.storage.from('fotos-mascotas').upload(ruta, bytes, { contentType: m[1], upsert: true }).then(function (u) {
+        if (u.error) return { ok: false, error: 'No se pudo subir la foto: ' + u.error.message };
+        return rpc('api_foto_pend', { p_codigo: txt(codigo), p_path: ruta, p_usuario: txt(usuario) }).then(function (r) {
+          if (!r || !r.ok) return r;
+          return firmarFotos([ruta]).then(function () { r.enlace = FOTOS.cache[ruta] ? FOTOS.cache[ruta].url : ''; return r; });
+        });
+      });
+    },
+    api_aceptar: function (codigo, usuario) { return rpc('api_aceptar', { p_codigo: txt(codigo), p_usuario: txt(usuario) }); },
+    api_vincular: function (codigo, id, usuario, mascota) { return rpc('api_vincular', { p_codigo: txt(codigo), p_id: Number(id), p_usuario: txt(usuario), p_mascota: txt(mascota) }); },
+    api_descartar: function (codigo, usuario) { return rpc('api_descartar', { p_codigo: txt(codigo), p_usuario: txt(usuario) }); },
     api_esquema: function () { return Promise.resolve(ESQUEMA); },
 
     api_buscar: function (texto, filtros) {
