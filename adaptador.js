@@ -20,7 +20,7 @@
   }
   function textoError(e) {
     var m = String((e && e.message) || e || ''), c = e && e.code;
-    if (c === 'PGRST202' || /Could not find the function|schema cache/i.test(m)) return 'Falta aplicar una migración en Supabase (05 a 23) (la función que pide la pantalla no existe todavía).';
+    if (c === 'PGRST202' || /Could not find the function|schema cache/i.test(m)) return 'Falta aplicar una migración en Supabase (05 a 26) (la función que pide la pantalla no existe todavía).';
     if (/JWT|expired|not authenticated|401/i.test(m) || c === 'PGRST301') return 'La sesión caducó. Vuelve a entrar.';
     if (/Failed to fetch|NetworkError|Load failed/i.test(m)) return 'No se pudo conectar. Revisa el internet e intenta de nuevo.';
     return m;
@@ -45,12 +45,12 @@
 
 
   /* ---------- fotos de los registros de Tally (bucket privado «fotos-mascotas»): direcciones firmadas, se guardan 50 min ---------- */
-  var FOTOS = { cache: {} };
+  var FOTOS = { cache: {}, rev: {} };
   function firmarFotos(rutas) {
     var ahora = Date.now(), faltan = rutas.filter(function (r) { return r && !(FOTOS.cache[r] && FOTOS.cache[r].hasta > ahora); });
     if (!faltan.length) return Promise.resolve();
     return Promise.resolve().then(function () { return sb.storage.from('fotos-mascotas').createSignedUrls(faltan, 3600); }).then(function (r) {
-      ((r && r.data) || []).forEach(function (x) { if (x && x.signedUrl && x.path) FOTOS.cache[x.path] = { url: x.signedUrl, hasta: ahora + 50 * 60 * 1000 }; });
+      ((r && r.data) || []).forEach(function (x) { if (x && x.signedUrl && x.path) FOTOS.cache[x.path] = { url: x.signedUrl, hasta: ahora + 50 * 60 * 1000 }; FOTOS.rev[x.signedUrl] = x.path; });
     }).catch(function () { /* sin foto: la tarjeta muestra la inicial de la mascota */ });
   }
   /** Pone la foto (miniatura y enlace) de cada registro pendiente y ordena las mascotas de las posibles coincidencias. */
@@ -63,6 +63,31 @@
       lista.forEach(function (p) { var f = p['Foto ruta'] && FOTOS.cache[p['Foto ruta']]; if (f) { p['Foto (miniatura)'] = f.url; p['Foto (enlace)'] = f.url; } });
       return r;
     });
+  }
+
+  /** Foto de cada mascota (ruta en el bucket privado → dirección firmada). Si no se puede firmar, la tarjeta muestra la inicial. */
+  function arreglarMascotas(lista) {
+    lista = (lista || []).filter(Boolean);
+    var rutas = lista.map(function (m) { return m.fotoRuta; }).filter(Boolean);
+    if (!rutas.length) return Promise.resolve();
+    return firmarFotos(rutas).then(function () {
+      lista.forEach(function (m) { var f = m.fotoRuta && FOTOS.cache[m.fotoRuta]; if (f) { m.foto = f.url; m.miniatura = f.url; } });
+    });
+  }
+  /** Convierte una imagen del almacenamiento en data URI (para dibujarla en la credencial o mostrarla). Acepta la ruta o la dirección firmada. */
+  function bajarImagen(ref) {
+    ref = txt(ref);
+    var ruta = FOTOS.rev[ref] || (/^(pendientes|credenciales|mascotas)\/[A-Za-z0-9_.\/-]+$/.test(ref) ? ref : '');
+    if (!ruta) return Promise.resolve({ ok: false, error: 'No se reconoce la imagen.' });
+    return Promise.resolve().then(function () { return sb.storage.from('fotos-mascotas').download(ruta); }).then(function (r) {
+      if (!r || r.error || !r.data) return { ok: false, error: 'No se pudo abrir la imagen' + (r && r.error && r.error.message ? ': ' + r.error.message : '.') };
+      return new Promise(function (ok) {
+        var fr = new FileReader();
+        fr.onload = function () { ok({ ok: true, uri: String(fr.result) }); };
+        fr.onerror = function () { ok({ ok: false, error: 'No se pudo leer la imagen.' }); };
+        fr.readAsDataURL(r.data);
+      });
+    }).catch(function (e) { return { ok: false, error: 'No se pudo abrir la imagen: ' + ((e && e.message) || e) }; });
   }
 
   /* ---------- una función por cada api_* que usa la pantalla ---------- */
@@ -97,10 +122,11 @@
     api_buscar: function (texto, filtros) {
       return rpc('api_buscar', { p_texto: txt(texto), p_filtros: filtros || {} }).then(function (r) {
         if (r && r.resultados) r.resultados.forEach(function (x) { x.mascotas = ordenarMascotas(x.mascotas); });
-        return r;
+        var todas = []; if (r && r.resultados) r.resultados.forEach(function (x) { (x.mascotas || []).forEach(function (m) { todas.push(m); }); });
+        return arreglarMascotas(todas).then(function () { return r; });
       });
     },
-    api_cliente: function (id) { return rpc('api_cliente', { p_id: Number(id) }).then(function (r) { if (r && r.mascotas) r.mascotas = ordenarMascotas(r.mascotas); return r; }); },
+    api_cliente: function (id) { return rpc('api_cliente', { p_id: Number(id) }).then(function (r) { if (r && r.mascotas) r.mascotas = ordenarMascotas(r.mascotas); return arreglarMascotas(r && r.mascotas).then(function () { return r; }); }); },
     api_porCobrar: function () { return rpc('api_por_cobrar'); },
     api_pagosCliente: function (id) { return rpc('api_pagos_cliente', { p_id: Number(id) }).then(function (r) { if (r && r.mascotas) r.mascotas = ordenarMascotas(r.mascotas); return r; }); },
     api_balances: function (ids) { return rpc('api_balances', { p_ids: (Array.isArray(ids) ? ids : []).map(Number).filter(function (n) { return n > 0; }) }); },
@@ -184,7 +210,51 @@
     api_tarjetasCliente: function (id) { return rpc('api_tarjetas_cliente', { p_id: Number(id) }); },
     api_tarjetas: function () { return rpc('api_tarjetas'); },
     api_reclamo: function (id) { return rpc('api_reclamo', { p_id: txt(id) }); },
-    api_foto: function () { return Promise.resolve({ ok: false, error: 'Las fotos todavía no están en la versión nueva.' }); }
+    /* Credencial de la mascota: la pantalla dibuja la imagen; aquí se sube al almacenamiento y se registra (estado de envío, mensaje, WhatsApp). */
+    api_guardarCredencial: function (id, uri, autorizo, usuario) {
+      var m = /^data:(image\/(?:png|jpeg));base64,(.+)$/.exec(txt(uri));
+      if (!m) return Promise.resolve({ ok: false, error: 'La credencial debe ser una imagen PNG o JPG.' });
+      if (m[2].length > 4200000) return Promise.resolve({ ok: false, error: 'La credencial pesa demasiado (máximo unos 3 MB). Vuelve a generarla.' });
+      var sid = txt(id).replace(/[^0-9-]/g, '');
+      if (!/^[0-9]+-[0-9]+$/.test(sid)) return Promise.resolve({ ok: false, error: 'ID de mascota no válido.' });
+      var bin = atob(m[2]), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var ruta = 'credenciales/' + sid + (m[1] === 'image/png' ? '.png' : '.jpg');
+      return sb.storage.from('fotos-mascotas').upload(ruta, bytes, { contentType: m[1], upsert: true }).then(function (u) {
+        if (u.error) return { ok: false, error: 'No se pudo guardar la credencial: ' + u.error.message };
+        return rpc('api_guardar_credencial', { p_id: sid, p_path: ruta, p_autorizo: !!autorizo, p_usuario: txt(usuario) });
+      });
+    },
+    api_credMarcar: function (id, accion, usuario) { return rpc('api_cred_marcar', { p_id: txt(id), p_accion: txt(accion), p_usuario: txt(usuario) }); },
+    api_foto: function (ref) { return bajarImagen(ref); },
+    /* Clientes y mascotas (v.117): alta, edición, fusión y foto, con las mismas reglas que en Apps Script. */
+    api_crearCliente: function (datos, esperado, usuario, forzar) { return rpc('api_crear_cliente', { p_datos: datos || {}, p_esperado: idOpc(esperado), p_usuario: txt(usuario), p_forzar: !!forzar }); },
+    api_agregarMascota: function (idCli, datos, usuario, forzar) { return rpc('api_agregar_mascota', { p_cliente: Number(idCli), p_datos: datos || {}, p_usuario: txt(usuario), p_forzar: !!forzar }); },
+    api_editarCliente: function (id, datos, usuario) { return rpc('api_editar_cliente', { p_id: Number(id), p_datos: datos || {}, p_usuario: txt(usuario) }); },
+    api_editarMascota: function (id, datos, usuario, forzar) { return rpc('api_editar_mascota', { p_id: txt(id), p_datos: datos || {}, p_usuario: txt(usuario), p_forzar: !!forzar }); },
+    api_fusionPrevia: function (ids) { return rpc('api_fusion_previa', { p_ids: (ids || []).map(Number) }); },
+    api_fusionar: function (conservar, otros, usuario, autorizo, texto) {
+      return rpc('api_fusionar', { p_conservar: Number(conservar), p_otros: (otros || []).map(Number), p_usuario: txt(usuario), p_autorizo: txt(autorizo), p_confirmacion: txt(texto) });
+    },
+    api_coincidencias: function (codigo) { return rpc('api_coincidencias', { p_codigo: txt(codigo) }); },
+    /* Foto de la mascota: se sube al bucket privado (carpeta mascotas/) y se guarda la ruta; la anterior queda en el bucket. */
+    api_fotoMascota: function (id, uri, usuario) {
+      var m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(txt(uri));
+      if (!m) return Promise.resolve({ ok: false, error: 'La foto debe ser JPG, PNG o WebP.' });
+      var sid = txt(id).replace(/[^0-9-]/g, '');
+      if (!/^[0-9]+-[0-9]+$/.test(sid)) return Promise.resolve({ ok: false, error: 'ID de mascota no válido.' });
+      var bin = atob(m[2]), bytes = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      var ext = m[1] === 'image/png' ? 'png' : (m[1] === 'image/webp' ? 'webp' : 'jpg');
+      var ruta = 'mascotas/' + sid + '-' + Date.now() + '.' + ext;
+      return sb.storage.from('fotos-mascotas').upload(ruta, bytes, { contentType: m[1], upsert: false }).then(function (u) {
+        if (u.error) return { ok: false, error: 'No se pudo subir la foto: ' + u.error.message };
+        return rpc('api_foto_mascota', { p_id: sid, p_path: ruta, p_usuario: txt(usuario) }).then(function (r) {
+          if (!r || !r.ok) return r;
+          return firmarFotos([ruta]).then(function () { r.enlace = FOTOS.cache[ruta] ? FOTOS.cache[ruta].url : ''; return r; });
+        });
+      });
+    }
   };
 
   /* ---------- clave de administración ----------
